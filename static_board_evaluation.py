@@ -142,14 +142,14 @@ queen_table_b = [-20,    -10,    -10,    -5,     -5,     -10,    -10,    -20,
 
 piece_values = {"Pawn" : 100, "Knight" : 320, "Bishop" : 330, "Rook" : 500, "Queen" : 900, "King" : 20000}#Values in centipawns
 
-board = chess.Board()
+"""board = chess.Board()
 board.push(chess.Move.from_uci("a2a3"))
 board.push(chess.Move.from_uci("b8c6"))
 board.push(chess.Move.from_uci("g1f3"))
 board.push(chess.Move.from_uci("c6b4"))
 board.push(chess.Move.from_uci("f3g1"))
 board.push(chess.Move.from_uci("b4d3"))
-print([x for x in board.pieces(chess.KNIGHT, chess.BLACK)])
+print([x for x in board.pieces(chess.KNIGHT, chess.BLACK)])"""
 
 def naive_evaluate_position(board):
 	"""Gives an estimation of the advantage of each player given a board.
@@ -157,6 +157,11 @@ def naive_evaluate_position(board):
 	This does NOT dive into continuations"""
 
 	score = 0
+	outcome = board.outcome()
+	if outcome != None :
+		if outcome.winner == chess.WHITE: return piece_values["King"]
+		elif outcome.winner == chess.BLACK: return -piece_values["King"]
+		else: return 0
 
 	pawn_w = board.pieces(chess.PAWN, chess.WHITE)
 	knight_w = board.pieces(chess.KNIGHT, chess.WHITE)
@@ -195,7 +200,7 @@ def naive_evaluate_position(board):
 
 	return score
 
-print(naive_evaluate_position(board))
+#print(naive_evaluate_position(board))
 
 """for y in range(8):
 	s = ""
