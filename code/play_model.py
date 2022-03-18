@@ -33,6 +33,7 @@ def get_human_move(board):
 model_side = chess.WHITE
 model = load_model("agents/2022-03-14 15-53-54-791117 2000.h5")
 board = chess.Board()
+one_hot = True
 
 if model_side == chess.BLACK:
 	print(board)
@@ -40,7 +41,7 @@ if model_side == chess.BLACK:
 while not board.is_game_over(claim_draw=True):
 	if model_side == chess.WHITE:
 		#move, eval = pick_first_best_move(model, board, 0)
-		move, pos_nbr, eval = mcts(model, board, 10, 10000, None, 0.95, 0.9, 0)
+		move, pos_nbr, eval = mcts(model, board, 10, 10000, None, 0.95, 0.9, 0, one_hot)
 		board.push(move)
 		print(board)
 		print(f"Model move : {move.uci()}, eval : {eval}")
@@ -56,7 +57,7 @@ while not board.is_game_over(claim_draw=True):
 			break
 		board.apply_mirror()
 		#move, eval = pick_first_best_move(model, board, 0)
-		move, pos_nbr, eval = mcts(model, board, 10, 1000, None, 0.95, 0.9, 0)
+		move, pos_nbr, eval = mcts(model, board, 10, 1000, None, 0.95, 0.9, 0, one_hot)
 		board.push(move)
 		board.apply_mirror()
 		print(board)

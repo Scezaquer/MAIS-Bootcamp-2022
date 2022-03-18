@@ -53,6 +53,23 @@ tiebreaker = count()
 
 def make_model(state_shape):
 	model = Sequential(
+		[
+			layers.Conv2D(filters=32, kernel_size=(3, 3), strides=1, padding="same", input_shape = state_shape, activation='relu'),
+			layers.Conv2D(filters=32, kernel_size=(3, 3), strides=1, padding="same", activation='relu'),
+			layers.Conv2D(filters=32, kernel_size=(3, 3), strides=1, padding="same", activation='relu'),
+			layers.Conv2D(filters=32, kernel_size=(3, 3), strides=1, padding="same", activation='relu'),
+			layers.Conv2D(filters=32, kernel_size=(3, 3), strides=1, padding="same", activation='relu'),
+			layers.Conv2D(filters=32, kernel_size=(3, 3), strides=1, padding="same", activation='relu'),
+			#layers.Conv2D(filters=32, kernel_size=(3, 3), strides=1, padding="valid", activation='relu'),
+			#layers.Conv2D(filters=1, kernel_size=(3, 3), strides=1, padding="valid", activation='relu'),
+			#layers.Conv2D(filters=1, kernel_size=(3, 3), strides=1, padding="valid", activation='relu'),
+			#layers.Conv2D(filters=1, kernel_size=(3, 3), strides=1, padding="valid", activation='relu'),
+			layers.Flatten(),
+			layers.Dense(8*8, activation = "linear"),
+			layers.Dense(1, activation = "linear")
+		]
+	)
+	"""model = Sequential(
     [
         layers.Dense(6*64, activation="linear", input_shape = state_shape),
 		layers.Flatten(),
@@ -61,7 +78,7 @@ def make_model(state_shape):
         layers.Dense(64, activation="linear"),
 		layers.Dense(64, activation="linear"),
         layers.Dense(1, activation="linear"),
-    ])
+    ])"""
 	model.compile(loss='mse', optimizer='Adam',  metrics = ['mae'])
 	return model
 
@@ -69,7 +86,15 @@ def save_model(model, epoch):
 	model.save("agents/{}".format(datetime.datetime.now()).replace(".", "-").replace(":", "-") + " " + str(epoch) + ".h5")
 	print("saved agent")
 
-def board_to_np_array(board):
+def save_training_data(filename, epoch, loss, val_loss, mae, val_mae):
+	with open(filename, "a") as f:
+		f.write(f"{epoch},{loss},{val_loss},{mae},{val_mae}\n")
+
+def myprint(s, filename):
+    with open(filename,'a') as f:
+        print(s, file=f)
+
+def board_to_np_array(board, one_hot):
 	"""Takes a chess.board as input and returns a numpy array"""
 	#Pawn = 1
 	#Knight = 2
@@ -80,23 +105,41 @@ def board_to_np_array(board):
 	#White = positive, Black = Negative
 	#Might wanna consider one hot encoding instead but that would make a massive number of inputs
 
-	result = np.zeros((6, 64))
+	if one_hot:
+		result = np.zeros((64, 6))
 
-	for x in board.pieces(chess.PAWN, chess.WHITE): result[0][x] = 1
-	for x in board.pieces(chess.KNIGHT, chess.WHITE): result[1][x] = 1
-	for x in board.pieces(chess.BISHOP, chess.WHITE): result[2][x] = 1
-	for x in board.pieces(chess.ROOK, chess.WHITE): result[3][x] = 1
-	for x in board.pieces(chess.QUEEN, chess.WHITE): result[4][x] = 1
-	for x in board.pieces(chess.KING, chess.WHITE): result[5][x] = 1
+		for x in board.pieces(chess.PAWN, chess.WHITE): result[x][0] = 1
+		for x in board.pieces(chess.KNIGHT, chess.WHITE): result[x][1] = 1
+		for x in board.pieces(chess.BISHOP, chess.WHITE): result[x][2] = 1
+		for x in board.pieces(chess.ROOK, chess.WHITE): result[x][3] = 1
+		for x in board.pieces(chess.QUEEN, chess.WHITE): result[x][4] = 1
+		for x in board.pieces(chess.KING, chess.WHITE): result[x][5] = 1
 
-	for x in board.pieces(chess.PAWN, chess.BLACK): result[0][x] = -1
-	for x in board.pieces(chess.KNIGHT, chess.BLACK): result[1][x] = -1
-	for x in board.pieces(chess.BISHOP, chess.BLACK): result[2][x] = -1
-	for x in board.pieces(chess.ROOK, chess.BLACK): result[3][x] = -1
-	for x in board.pieces(chess.QUEEN, chess.BLACK): result[4][x] = -1
-	for x in board.pieces(chess.KING, chess.BLACK): result[5][x] = -1
+		for x in board.pieces(chess.PAWN, chess.BLACK): result[x][0] = -1
+		for x in board.pieces(chess.KNIGHT, chess.BLACK): result[x][1] = -1
+		for x in board.pieces(chess.BISHOP, chess.BLACK): result[x][2] = -1
+		for x in board.pieces(chess.ROOK, chess.BLACK): result[x][3] = -1
+		for x in board.pieces(chess.QUEEN, chess.BLACK): result[x][4] = -1
+		for x in board.pieces(chess.KING, chess.BLACK): result[x][5] = -1
+	
+	else:
+		result = np.zeros(64)
+		for x in board.pieces(chess.PAWN, chess.WHITE): result[x] = 1
+		for x in board.pieces(chess.KNIGHT, chess.WHITE): result[x] = 2
+		for x in board.pieces(chess.BISHOP, chess.WHITE): result[x] = 3
+		for x in board.pieces(chess.ROOK, chess.WHITE): result[x] = 4
+		for x in board.pieces(chess.QUEEN, chess.WHITE): result[x] = 5
+		for x in board.pieces(chess.KING, chess.WHITE): result[x] = 6
 
-	return np.array(result)
+		for x in board.pieces(chess.PAWN, chess.BLACK): result[x] = -1
+		for x in board.pieces(chess.KNIGHT, chess.BLACK): result[x] = -2
+		for x in board.pieces(chess.BISHOP, chess.BLACK): result[x] = -3
+		for x in board.pieces(chess.ROOK, chess.BLACK): result[x] = -4
+		for x in board.pieces(chess.QUEEN, chess.BLACK): result[x] = -5
+		for x in board.pieces(chess.KING, chess.BLACK): result[x] = -6
+	
+	return np.reshape(result, (8, 8, 6))
+
 
 class node():
 	def __init__(self, board, treesearch_prio, depth, parent, value = 0):
@@ -123,7 +166,7 @@ class node():
 		return self.children_number
 
 
-def append_moves(model, nd, pos_nbr, priority_queue, depth_penalty, random_factor, max_depth):
+def append_moves(model, nd, pos_nbr, priority_queue, depth_penalty, random_factor, max_depth, one_hot):
 	if max_depth != None and nd.depth+1 > max_depth:
 		return pos_nbr, priority_queue
 	global tiebreaker
@@ -133,7 +176,7 @@ def append_moves(model, nd, pos_nbr, priority_queue, depth_penalty, random_facto
 		pos_nbr += 1
 		if pos_nbr%250 == 0:
 			print(f"pos_nbr : {pos_nbr}", end="\r")
-		listNextStates.append(board_to_np_array(nd.board.copy()))
+		listNextStates.append(board_to_np_array(nd.board.copy(), one_hot))
 		if nd.board.is_checkmate():
 			nd.children.append(node(nd.board.copy(), 2**16, nd.depth+1, nd))
 			nd.board.pop()
@@ -157,18 +200,18 @@ def append_moves(model, nd, pos_nbr, priority_queue, depth_penalty, random_facto
 	
 	return pos_nbr, priority_queue
 
-def mcts(model, board, max_depth=None, max_pos_nbr=1000, max_search_time=None, depth_penalty=0.95, gamma=0.9, random_factor=0.2):
+def mcts(model, board, max_depth=None, max_pos_nbr=1000, max_search_time=None, depth_penalty=0.95, gamma=0.9, random_factor=0.2, one_hot = True):
 	#TODO: Monte carlos tree search
 	tree_root = node(board, 0, 0, None)
 	priority_queue = []#Each element in the priority queue is of the form (priority, tiebreaker, node)
 	#considered_pos = {}#Hashmap of the already considered pos
 	pos_nbr = 0
 	
-	pos_nbr, priority_queue = append_moves(model, tree_root, pos_nbr, priority_queue, depth_penalty, random_factor, max_depth)
+	pos_nbr, priority_queue = append_moves(model, tree_root, pos_nbr, priority_queue, depth_penalty, random_factor, max_depth, one_hot)
 	
 	while pos_nbr < max_pos_nbr and len(priority_queue) != 0:
 		b = heapq.heappop(priority_queue)
-		pos_nbr, priority_queue = append_moves(model, b[2], pos_nbr, priority_queue, depth_penalty, random_factor, max_depth)
+		pos_nbr, priority_queue = append_moves(model, b[2], pos_nbr, priority_queue, depth_penalty, random_factor, max_depth, one_hot)
 	
 	print("Calculating value...", end="\r")
 	tree_root.calculate_value(gamma)
@@ -181,12 +224,12 @@ def mcts(model, board, max_depth=None, max_pos_nbr=1000, max_search_time=None, d
 	#	print(x.board.peek(), x.value, x.children_number)
 	return tree_root.children[-1].board.peek(), pos_nbr, tree_root.children[-1].value
 
-def pick_first_best_move(model, board, random_factor):
+def pick_first_best_move(model, board, random_factor, one_hot):
 	listNextStates = []
 	listmoves = []
 	for x in board.legal_moves:
 		board.push(x)
-		listNextStates.append(board_to_np_array(board.copy()))
+		listNextStates.append(board_to_np_array(board.copy(), one_hot))
 		if board.is_checkmate():
 			board.pop()
 			return x, piece_values["King"]
@@ -199,7 +242,7 @@ def pick_first_best_move(model, board, random_factor):
 	amax = np.argmax(predictions)
 	return listmoves[amax], predictions[amax]
 
-def play(model, max_depth=None, max_pos_nbr=1000, max_search_time=None, depth_penalty=0.95, gamma=0.9, random_factor=0.2):
+def play(model, max_depth=None, max_pos_nbr=1000, max_search_time=None, depth_penalty=0.95, gamma=0.9, random_factor=0.2, one_hot = True):
 	board = chess.Board()
 	boards = []
 	positions_w = []
@@ -207,23 +250,23 @@ def play(model, max_depth=None, max_pos_nbr=1000, max_search_time=None, depth_pe
 	mirrored = False
 	while not board.is_game_over(claim_draw=True):
 		#best_move, pos_nbr = mcts(model, board, max_depth, max_pos_nbr, max_search_time, depth_penalty, gamma, random_factor)
-		best_move, eval = pick_first_best_move(model, board, random_factor)
+		best_move, eval = pick_first_best_move(model, board, random_factor, one_hot)
 		#print(best_move)
 		board.push(best_move)
 
 		if mirrored:
-			positions_b.append(board_to_np_array(board))
+			positions_b.append(board_to_np_array(board, one_hot))
 		else:
-			positions_w.append(board_to_np_array(board))
+			positions_w.append(board_to_np_array(board, one_hot))
 			boards = [board.fen()] + boards
 
 		board.apply_mirror()
 
 		if mirrored:
-			positions_w.append(board_to_np_array(board))
+			positions_w.append(board_to_np_array(board, one_hot))
 			boards = [board.fen()] + boards
 		else:
-			positions_b.append(board_to_np_array(board))
+			positions_b.append(board_to_np_array(board, one_hot))
 
 		mirrored = not mirrored
 
@@ -232,17 +275,17 @@ def play(model, max_depth=None, max_pos_nbr=1000, max_search_time=None, depth_pe
 	
 	return board, positions_w, positions_b, boards
 
-def play_mcts(model1, model2):
+def play_mcts(model1, model2, one_hot):
 	board = chess.Board()
 	move_nbr = 0
 	while not board.is_game_over(claim_draw=True):
-		move, pos_nbr, eval = mcts(model1, board, 10, 200, None, 0.95, 0.9, 0)
+		move, pos_nbr, eval = mcts(model1, board, 10, 200, None, 0.95, 0.9, 0, one_hot)
 		board.push(move)
 		move_nbr += 1
 		if board.is_game_over(claim_draw=True):
 			break
 		board.apply_mirror()
-		move, pos_nbr, eval = mcts(model2, board, 10, 200, None, 0.95, 0.9, 0)
+		move, pos_nbr, eval = mcts(model2, board, 10, 200, None, 0.95, 0.9, 0, one_hot)
 		board.push(move)
 		move_nbr += 1
 		board.apply_mirror
@@ -253,12 +296,17 @@ def train(model, epochs, batch_size, gamma=0.9):
 	#The Q-value of each position n is Q(n) = r + lambda*Q(n+1)
 	#With r the naive board evaluation of the current position and lambda the discouted future
 	print("Starting training")
+
+	training_data_filename = f"training_data/{datetime.datetime.now()}".replace(".", "-").replace(":", "-") + " " + f"batchsize {batch_size} gamma {gamma}" + ".csv"
+	model.summary(print_fn=lambda x : myprint(x, training_data_filename))
+	save_training_data(training_data_filename, "epoch", "loss", "val_loss", "mae", "val_mae")
+
 	current_epoch = 0
 	previous_save = 0
 	total_data = []
 	total_labels = []
-	generation = 0
-	best_model = clone_model(model)
+	#generation = 0
+	#best_model = clone_model(model)
 	while current_epoch <= epochs:
 
 		if current_epoch - previous_save >= 100:
@@ -270,7 +318,7 @@ def train(model, epochs, batch_size, gamma=0.9):
 		for x in range(batch_size):
 			current_epoch += 1
 			rf = 2 if current_epoch == 1 else 1/log(current_epoch)#Function looks nice I guess, kinda picked it at random
-			game, positions_w, positions_b, boards = play(model, max_depth=None, max_pos_nbr=1, max_search_time=None, depth_penalty=0.95, gamma=gamma, random_factor=rf)
+			game, positions_w, positions_b, boards = play(model, max_depth=None, max_pos_nbr=1, max_search_time=None, depth_penalty=0.95, gamma=gamma, random_factor=rf, one_hot=True)
 
 			print(f"Game {current_epoch}: {game.outcome(claim_draw = True)} ({len(positions_w)} moves)")
 
@@ -295,10 +343,11 @@ def train(model, epochs, batch_size, gamma=0.9):
 		old_data = []
 		old_labels = []
 		for x in range(int(len(total_data)/10)):
-			index = int(random()*len(total_data)/10)
+			index = int(random()*len(total_data))
 			old_data.append(total_data[index])
 			old_labels.append(total_labels[index])
 		if len(old_data):
+			print(len(old_data))
 			training_set = np.concatenate((new_data, old_data), axis = 0)
 			training_labels = np.concatenate((labels, old_labels), axis = 0)
 		else:
@@ -306,7 +355,8 @@ def train(model, epochs, batch_size, gamma=0.9):
 			training_labels = np.array(labels)
 		
 		print(len(training_set), len(training_labels))
-		model.fit(training_set, training_labels, epochs=5, verbose=1)
+		history = model.fit(training_set, training_labels, epochs=5, verbose=1, validation_split=0.1)
+		save_training_data(training_data_filename, current_epoch, history.history['loss'][-1], history.history["val_loss"][-1], history.history["mae"][-1], history.history["val_mae"][-1])
 
 		"""if current_epoch/batch_size % 5 == 0:
 			models_battle, move_nbr = play_mcts(model, best_model)
@@ -319,9 +369,9 @@ def train(model, epochs, batch_size, gamma=0.9):
 				model = clone_model(best_model)
 				model.compile(loss='mse', optimizer='Adam',  metrics = ['mae'])
 				current_epoch -= 5*batch_size
-			print(f"Current generation : {generation}")
-			total_data = total_data + new_data
-			total_labels = total_labels + labels"""
+			print(f"Current generation : {generation}")"""
+		total_data = total_data + new_data
+		total_labels = total_labels + labels
 
 		"""to_del = randint(0, 9)
 		for x in range(len(total_data)-to_del, -1, to_del):
@@ -329,7 +379,7 @@ def train(model, epochs, batch_size, gamma=0.9):
 			del total_labels[x]"""
 
 if __name__ == "__main__":
-	model = make_model((6, 64))
+	model = make_model((8, 8, 6))
 	model.summary()
 	epochs = 10000
 	batch_size = 10
