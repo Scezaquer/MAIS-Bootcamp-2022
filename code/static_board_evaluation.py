@@ -157,7 +157,7 @@ def naive_evaluate_position(board):
 	This does NOT dive into continuations"""
 
 	score = 0
-	outcome = board.outcome()
+	outcome = board.outcome(claim_draw = True)
 	if outcome != None :
 		if outcome.winner == chess.WHITE: return piece_values["King"]
 		elif outcome.winner == chess.BLACK: return -piece_values["King"]

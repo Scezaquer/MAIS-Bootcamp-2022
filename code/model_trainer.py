@@ -39,12 +39,12 @@ import tensorflow as tf
 import numpy as np
 import datetime
 import heapq
-from random import random
+from random import random, randint
 from math import log
 from itertools import count
 
 from keras import layers
-from keras.models import Sequential
+from keras.models import Sequential, clone_model
 from keras.layers.core import Dense, Dropout, Activation, Flatten
 
 from static_board_evaluation import *
@@ -54,7 +54,8 @@ tiebreaker = count()
 def make_model(state_shape):
 	model = Sequential(
     [
-        layers.Dense(64, activation="linear", input_shape = state_shape),
+        layers.Dense(6*64, activation="linear", input_shape = state_shape),
+		layers.Flatten(),
         layers.Dense(64, activation="linear"),
 		layers.Dense(64, activation="linear"),
         layers.Dense(64, activation="linear"),
@@ -79,21 +80,21 @@ def board_to_np_array(board):
 	#White = positive, Black = Negative
 	#Might wanna consider one hot encoding instead but that would make a massive number of inputs
 
-	result = np.zeros(64)
+	result = np.zeros((6, 64))
 
-	for x in board.pieces(chess.PAWN, chess.WHITE): result[x] = 1
-	for x in board.pieces(chess.KNIGHT, chess.WHITE): result[x] = 2
-	for x in board.pieces(chess.BISHOP, chess.WHITE): result[x] = 3
-	for x in board.pieces(chess.ROOK, chess.WHITE): result[x] = 4
-	for x in board.pieces(chess.QUEEN, chess.WHITE): result[x] = 5
-	for x in board.pieces(chess.KING, chess.WHITE): result[x] = 6
+	for x in board.pieces(chess.PAWN, chess.WHITE): result[0][x] = 1
+	for x in board.pieces(chess.KNIGHT, chess.WHITE): result[1][x] = 1
+	for x in board.pieces(chess.BISHOP, chess.WHITE): result[2][x] = 1
+	for x in board.pieces(chess.ROOK, chess.WHITE): result[3][x] = 1
+	for x in board.pieces(chess.QUEEN, chess.WHITE): result[4][x] = 1
+	for x in board.pieces(chess.KING, chess.WHITE): result[5][x] = 1
 
-	for x in board.pieces(chess.PAWN, chess.BLACK): result[x] = -1
-	for x in board.pieces(chess.KNIGHT, chess.BLACK): result[x] = -2
-	for x in board.pieces(chess.BISHOP, chess.BLACK): result[x] = -3
-	for x in board.pieces(chess.ROOK, chess.BLACK): result[x] = -4
-	for x in board.pieces(chess.QUEEN, chess.BLACK): result[x] = -5
-	for x in board.pieces(chess.KING, chess.BLACK): result[x] = -6
+	for x in board.pieces(chess.PAWN, chess.BLACK): result[0][x] = -1
+	for x in board.pieces(chess.KNIGHT, chess.BLACK): result[1][x] = -1
+	for x in board.pieces(chess.BISHOP, chess.BLACK): result[2][x] = -1
+	for x in board.pieces(chess.ROOK, chess.BLACK): result[3][x] = -1
+	for x in board.pieces(chess.QUEEN, chess.BLACK): result[4][x] = -1
+	for x in board.pieces(chess.KING, chess.BLACK): result[5][x] = -1
 
 	return np.array(result)
 
@@ -105,6 +106,7 @@ class node():
 		self.parent = parent
 		self.children = []
 		self.value = value
+		self.children_number = 0
 	
 	def calculate_value(self, gamma):
 		naive_val = naive_evaluate_position(self.board)
@@ -115,52 +117,69 @@ class node():
 		else:
 			self.value = naive_val + gamma*min([x.calculate_value(gamma) for x in self.children])
 		return self.value
+	
+	def count_children(self):
+		self.children_number = sum([1+x.count_children() for x in self.children])
+		return self.children_number
 
 
-def append_moves(model, nd, pos_nbr, priority_queue, depth_penalty, random_factor):
+def append_moves(model, nd, pos_nbr, priority_queue, depth_penalty, random_factor, max_depth):
+	if max_depth != None and nd.depth+1 > max_depth:
+		return pos_nbr, priority_queue
 	global tiebreaker
+	listNextStates = []
 	for x in nd.board.legal_moves:
 		nd.board.push(x)
-
-		"""if nd.board.fen() in considered_pos.keys():#If the board position has already been considered
-			nd.board.pop()
-			continue"""
-
 		pos_nbr += 1
-		if pos_nbr%25 == 0:
+		if pos_nbr%250 == 0:
 			print(f"pos_nbr : {pos_nbr}", end="\r")
+		listNextStates.append(board_to_np_array(nd.board.copy()))
+		if nd.board.is_checkmate():
+			nd.children.append(node(nd.board.copy(), 2**16, nd.depth+1, nd))
+			nd.board.pop()
+			return pos_nbr, priority_queue
+		nd.board.pop()
+	
+	predictions = model(np.array(listNextStates)).numpy()
 
-		prediction = model.predict(board_to_np_array(nd.board).reshape((1, 64)))
-		treesearch_prio = prediction*(depth_penalty**nd.depth)
+	for index, move in enumerate(nd.board.legal_moves):
+		#Priority in the treesearch
+		treesearch_prio = predictions[index]*(depth_penalty**nd.depth)
 		treesearch_prio += treesearch_prio*(0.5-random())*random_factor*2
 		if nd.board.turn == chess.WHITE: treesearch_prio *= -1
 
-		new_node = node(nd.board.copy(), prediction, nd.depth+1, nd)
-		#print(treesearch_prio, tiebreaker)
+		#Add node to the heap and tree
+		tmp = nd.board.copy()
+		tmp.push(move)
+		new_node = node(tmp, predictions[index], nd.depth+1, nd)
 		heapq.heappush(priority_queue, (treesearch_prio, next(tiebreaker), new_node))
 		nd.children.append(new_node)
-		#considered_pos[nd.board.fen()] = new_node
-
-		nd.board.pop()
+	
 	return pos_nbr, priority_queue
 
 def mcts(model, board, max_depth=None, max_pos_nbr=1000, max_search_time=None, depth_penalty=0.95, gamma=0.9, random_factor=0.2):
 	#TODO: Monte carlos tree search
-	tree_root = node(board, 0, model.predict(board_to_np_array(board).reshape((1, 64))), None)
+	tree_root = node(board, 0, 0, None)
 	priority_queue = []#Each element in the priority queue is of the form (priority, tiebreaker, node)
 	#considered_pos = {}#Hashmap of the already considered pos
 	pos_nbr = 0
 	
-	pos_nbr, priority_queue = append_moves(model, tree_root, pos_nbr, priority_queue, depth_penalty, random_factor)
+	pos_nbr, priority_queue = append_moves(model, tree_root, pos_nbr, priority_queue, depth_penalty, random_factor, max_depth)
 	
-	while pos_nbr < max_pos_nbr:
+	while pos_nbr < max_pos_nbr and len(priority_queue) != 0:
 		b = heapq.heappop(priority_queue)
-		pos_nbr, priority_queue = append_moves(model, b[2], pos_nbr, priority_queue, depth_penalty, random_factor)
+		pos_nbr, priority_queue = append_moves(model, b[2], pos_nbr, priority_queue, depth_penalty, random_factor, max_depth)
 	
+	print("Calculating value...", end="\r")
 	tree_root.calculate_value(gamma)
 	tree_root.children.sort(key=lambda x: x.value)
 
-	return tree_root.children[-1].board.peek(), pos_nbr
+	print("Counting children...", end = "\r")
+	tree_root.count_children()
+
+	#for x in tree_root.children:
+	#	print(x.board.peek(), x.value, x.children_number)
+	return tree_root.children[-1].board.peek(), pos_nbr, tree_root.children[-1].value
 
 def pick_first_best_move(model, board, random_factor):
 	listNextStates = []
@@ -168,13 +187,17 @@ def pick_first_best_move(model, board, random_factor):
 	for x in board.legal_moves:
 		board.push(x)
 		listNextStates.append(board_to_np_array(board.copy()))
+		if board.is_checkmate():
+			board.pop()
+			return x, piece_values["King"]
 		board.pop()
 		listmoves.append(x)
 	
-	predictions = model.predict(np.array(listNextStates))
+	predictions = model(np.array(listNextStates)).numpy()
 	for x in range(len(predictions)):
 		predictions[x] += predictions[x]*(0.5-random())*random_factor*2
-	return listmoves[np.argmax(predictions)]
+	amax = np.argmax(predictions)
+	return listmoves[amax], predictions[amax]
 
 def play(model, max_depth=None, max_pos_nbr=1000, max_search_time=None, depth_penalty=0.95, gamma=0.9, random_factor=0.2):
 	board = chess.Board()
@@ -184,7 +207,7 @@ def play(model, max_depth=None, max_pos_nbr=1000, max_search_time=None, depth_pe
 	mirrored = False
 	while not board.is_game_over(claim_draw=True):
 		#best_move, pos_nbr = mcts(model, board, max_depth, max_pos_nbr, max_search_time, depth_penalty, gamma, random_factor)
-		best_move = pick_first_best_move(model, board, random_factor)
+		best_move, eval = pick_first_best_move(model, board, random_factor)
 		#print(best_move)
 		board.push(best_move)
 
@@ -209,13 +232,33 @@ def play(model, max_depth=None, max_pos_nbr=1000, max_search_time=None, depth_pe
 	
 	return board, positions_w, positions_b, boards
 
+def play_mcts(model1, model2):
+	board = chess.Board()
+	move_nbr = 0
+	while not board.is_game_over(claim_draw=True):
+		move, pos_nbr, eval = mcts(model1, board, 10, 200, None, 0.95, 0.9, 0)
+		board.push(move)
+		move_nbr += 1
+		if board.is_game_over(claim_draw=True):
+			break
+		board.apply_mirror()
+		move, pos_nbr, eval = mcts(model2, board, 10, 200, None, 0.95, 0.9, 0)
+		board.push(move)
+		move_nbr += 1
+		board.apply_mirror
+	return board, move_nbr
+
 def train(model, epochs, batch_size, gamma=0.9):
 	#TODO: Main loop. Trains the model by making it play against itself and updating the weights
 	#The Q-value of each position n is Q(n) = r + lambda*Q(n+1)
 	#With r the naive board evaluation of the current position and lambda the discouted future
 	print("Starting training")
 	current_epoch = 0
-	previous_save = -100
+	previous_save = 0
+	total_data = []
+	total_labels = []
+	generation = 0
+	best_model = clone_model(model)
 	while current_epoch <= epochs:
 
 		if current_epoch - previous_save >= 100:
@@ -229,7 +272,7 @@ def train(model, epochs, batch_size, gamma=0.9):
 			rf = 2 if current_epoch == 1 else 1/log(current_epoch)#Function looks nice I guess, kinda picked it at random
 			game, positions_w, positions_b, boards = play(model, max_depth=None, max_pos_nbr=1, max_search_time=None, depth_penalty=0.95, gamma=gamma, random_factor=rf)
 
-			print(f"Game {current_epoch}: {game.outcome()} ({len(positions_w)} moves)")
+			print(f"Game {current_epoch}: {game.outcome(claim_draw = True)} ({len(positions_w)} moves)")
 
 			boards.pop()
 
@@ -249,12 +292,47 @@ def train(model, epochs, batch_size, gamma=0.9):
 				new_data.append(positions_b.pop())
 				labels.append(-1*naive_evaluate_position(chess.Board(y)) + gamma*labels[-1])
 		
-		print(len(np.array(new_data)), len(np.array(labels)))
-		model.fit(np.array(new_data), np.array(labels), epochs=5, verbose=1)
+		old_data = []
+		old_labels = []
+		for x in range(int(len(total_data)/10)):
+			index = int(random()*len(total_data)/10)
+			old_data.append(total_data[index])
+			old_labels.append(total_labels[index])
+		if len(old_data):
+			training_set = np.concatenate((new_data, old_data), axis = 0)
+			training_labels = np.concatenate((labels, old_labels), axis = 0)
+		else:
+			training_set = np.array(new_data)
+			training_labels = np.array(labels)
+		
+		print(len(training_set), len(training_labels))
+		model.fit(training_set, training_labels, epochs=5, verbose=1)
 
-model = make_model((64,))
-epochs = 10000
-batch_size = 10
-gamma = 0.9
+		"""if current_epoch/batch_size % 5 == 0:
+			models_battle, move_nbr = play_mcts(model, best_model)
+			print(f"Result of gen fight : {models_battle.outcome()} ({move_nbr} moves)")
+			if models_battle.outcome(claim_draw=True).winner == chess.WHITE:
+				generation += 1
+				best_model = clone_model(model)
+			else:
+				print("No progress. Backtracking")
+				model = clone_model(best_model)
+				model.compile(loss='mse', optimizer='Adam',  metrics = ['mae'])
+				current_epoch -= 5*batch_size
+			print(f"Current generation : {generation}")
+			total_data = total_data + new_data
+			total_labels = total_labels + labels"""
 
-train(model=model, epochs=epochs, batch_size=batch_size, gamma=gamma)
+		"""to_del = randint(0, 9)
+		for x in range(len(total_data)-to_del, -1, to_del):
+			del total_data[x]
+			del total_labels[x]"""
+
+if __name__ == "__main__":
+	model = make_model((6, 64))
+	model.summary()
+	epochs = 10000
+	batch_size = 10
+	gamma = 0.9
+
+	train(model=model, epochs=epochs, batch_size=batch_size, gamma=gamma)
