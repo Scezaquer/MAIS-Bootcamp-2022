@@ -169,6 +169,11 @@ class node():
 		return self.children_number
 
 def priority_function(x):
+	if x<0: return -1/(x-1)
+	else: return x+1
+
+	#Old version of the code. Gives the exact sema output but is more
+	#computationally expensive
 	if x<0: a = -log(-x+1)
 	else: a = log(x+1)
 	return exp(a)
