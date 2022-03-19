@@ -4,6 +4,7 @@ __author__ = "Aurélien Bück-Kaeffer"
 __license__ = "MIT"
 __version__= "0.0.1"
 
+from tabnanny import verbose
 import chess
 import tensorflow as tf
 import numpy as np
@@ -31,7 +32,7 @@ def get_human_move(board):
 	return move
 
 model_side = chess.WHITE
-model = load_model("agents/2022-03-14 15-53-54-791117 2000.h5")
+model = load_model("2022-03-18_16-22-38-205912_1200.h5")
 board = chess.Board()
 one_hot = True
 
@@ -41,7 +42,7 @@ if model_side == chess.BLACK:
 while not board.is_game_over(claim_draw=True):
 	if model_side == chess.WHITE:
 		#move, eval = pick_first_best_move(model, board, 0)
-		move, pos_nbr, eval = mcts(model, board, 10, 10000, None, 0.95, 0.9, 0, one_hot)
+		move, pos_nbr, eval = mcts(model=model, board=board, max_depth=10, max_pos_nbr=10000, max_search_time=None, depth_penalty=0.3, gamma=0.9, random_factor=0, one_hot=one_hot, verbose=True)
 		board.push(move)
 		print(board)
 		print(f"Model move : {move.uci()}, eval : {eval}")
@@ -57,7 +58,7 @@ while not board.is_game_over(claim_draw=True):
 			break
 		board.apply_mirror()
 		#move, eval = pick_first_best_move(model, board, 0)
-		move, pos_nbr, eval = mcts(model, board, 10, 1000, None, 0.95, 0.9, 0, one_hot)
+		move, pos_nbr, eval = mcts(model=model, board=board, max_depth=10, max_pos_nbr=10000, max_search_time=None, depth_penalty=0.9, gamma=0.9, random_factor=0, one_hot=one_hot, verbose=True)
 		board.push(move)
 		board.apply_mirror()
 		print(board)

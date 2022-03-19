@@ -40,7 +40,7 @@ import numpy as np
 import datetime
 import heapq
 from random import random, randint
-from math import log
+from math import log, exp
 from itertools import count
 
 from keras import layers
@@ -60,12 +60,15 @@ def make_model(state_shape):
 			layers.Conv2D(filters=32, kernel_size=(3, 3), strides=1, padding="same", activation='relu'),
 			layers.Conv2D(filters=32, kernel_size=(3, 3), strides=1, padding="same", activation='relu'),
 			layers.Conv2D(filters=32, kernel_size=(3, 3), strides=1, padding="same", activation='relu'),
+			layers.Conv2D(filters=32, kernel_size=(3, 3), strides=1, padding="valid", activation='relu'),
+			layers.Conv2D(filters=32, kernel_size=(3, 3), strides=1, padding="valid", activation='relu'),
+			layers.Conv2D(filters=32, kernel_size=(3, 3), strides=1, padding="valid", activation='relu'),
 			#layers.Conv2D(filters=32, kernel_size=(3, 3), strides=1, padding="valid", activation='relu'),
 			#layers.Conv2D(filters=1, kernel_size=(3, 3), strides=1, padding="valid", activation='relu'),
 			#layers.Conv2D(filters=1, kernel_size=(3, 3), strides=1, padding="valid", activation='relu'),
 			#layers.Conv2D(filters=1, kernel_size=(3, 3), strides=1, padding="valid", activation='relu'),
 			layers.Flatten(),
-			layers.Dense(8*8, activation = "linear"),
+			layers.Dense(8, activation = "linear"),
 			layers.Dense(1, activation = "linear")
 		]
 	)
@@ -165,6 +168,10 @@ class node():
 		self.children_number = sum([1+x.count_children() for x in self.children])
 		return self.children_number
 
+def priority_function(x):
+	if x<0: a = -log(-x+1)
+	else: a = log(x+1)
+	return exp(a)
 
 def append_moves(model, nd, pos_nbr, priority_queue, depth_penalty, random_factor, max_depth, one_hot):
 	if max_depth != None and nd.depth+1 > max_depth:
@@ -183,13 +190,18 @@ def append_moves(model, nd, pos_nbr, priority_queue, depth_penalty, random_facto
 			return pos_nbr, priority_queue
 		nd.board.pop()
 	
-	predictions = model(np.array(listNextStates)).numpy()
+	if nd.board.legal_moves.count() != 0:
+		predictions = model(np.array(listNextStates)).numpy()
 
 	for index, move in enumerate(nd.board.legal_moves):
 		#Priority in the treesearch
-		treesearch_prio = predictions[index]*(depth_penalty**nd.depth)
-		treesearch_prio += treesearch_prio*(0.5-random())*random_factor*2
+		treesearch_prio = -predictions[index]
 		if nd.board.turn == chess.WHITE: treesearch_prio *= -1
+		treesearch_prio = -priority_function(treesearch_prio)*(depth_penalty**nd.depth)
+		"""if treesearch_prio < 0:
+			treesearch_prio = exp(treesearch_prio)
+		treesearch_prio *= depth_penalty**nd.depth
+		treesearch_prio += treesearch_prio*(0.5-random())*random_factor*2"""
 
 		#Add node to the heap and tree
 		tmp = nd.board.copy()
@@ -200,18 +212,21 @@ def append_moves(model, nd, pos_nbr, priority_queue, depth_penalty, random_facto
 	
 	return pos_nbr, priority_queue
 
-def mcts(model, board, max_depth=None, max_pos_nbr=1000, max_search_time=None, depth_penalty=0.95, gamma=0.9, random_factor=0.2, one_hot = True):
+def mcts(model, board, max_depth=None, max_pos_nbr=1000, max_search_time=None, depth_penalty=0.95, gamma=0.9, random_factor=0.2, one_hot = True, verbose = False):
 	#TODO: Monte carlos tree search
 	tree_root = node(board, 0, 0, None)
 	priority_queue = []#Each element in the priority queue is of the form (priority, tiebreaker, node)
 	#considered_pos = {}#Hashmap of the already considered pos
 	pos_nbr = 0
 	
-	pos_nbr, priority_queue = append_moves(model, tree_root, pos_nbr, priority_queue, depth_penalty, random_factor, max_depth, one_hot)
+	pos_nbr, priority_queue = append_moves(model=model, nd=tree_root, pos_nbr=pos_nbr, priority_queue=priority_queue, depth_penalty=depth_penalty, random_factor=random_factor, max_depth=max_depth, one_hot=one_hot)
+	if verbose:
+		for x in priority_queue:
+			print(x[2].board.peek(), x[2].treesearch_prio, x[0])
 	
 	while pos_nbr < max_pos_nbr and len(priority_queue) != 0:
 		b = heapq.heappop(priority_queue)
-		pos_nbr, priority_queue = append_moves(model, b[2], pos_nbr, priority_queue, depth_penalty, random_factor, max_depth, one_hot)
+		pos_nbr, priority_queue = append_moves(model=model, nd=b[2], pos_nbr=pos_nbr, priority_queue=priority_queue, depth_penalty=depth_penalty, random_factor=random_factor, max_depth=max_depth, one_hot=one_hot)
 	
 	print("Calculating value...", end="\r")
 	tree_root.calculate_value(gamma)
@@ -220,9 +235,15 @@ def mcts(model, board, max_depth=None, max_pos_nbr=1000, max_search_time=None, d
 	print("Counting children...", end = "\r")
 	tree_root.count_children()
 
-	#for x in tree_root.children:
-	#	print(x.board.peek(), x.value, x.children_number)
-	return tree_root.children[-1].board.peek(), pos_nbr, tree_root.children[-1].value
+	if verbose:
+		for x in tree_root.children:
+			print(x.board.peek(), x.value, x.children_number)
+	print(tree_root.children[-2].children)
+	for x in range(len(tree_root.children)-1, -1, -1):
+		best_move = tree_root.children[x]
+		if best_move.children_number != 0 or best_move.board.is_checkmate():
+			break
+	return best_move.board.peek(), pos_nbr, best_move.value
 
 def pick_first_best_move(model, board, random_factor, one_hot):
 	listNextStates = []
@@ -275,17 +296,17 @@ def play(model, max_depth=None, max_pos_nbr=1000, max_search_time=None, depth_pe
 	
 	return board, positions_w, positions_b, boards
 
-def play_mcts(model1, model2, one_hot):
+def play_mcts(model1, model2, one_hot, verbose = False):
 	board = chess.Board()
 	move_nbr = 0
 	while not board.is_game_over(claim_draw=True):
-		move, pos_nbr, eval = mcts(model1, board, 10, 200, None, 0.95, 0.9, 0, one_hot)
+		move, pos_nbr, eval = mcts(model1, board, 10, 200, None, 0.95, 0.9, 0, one_hot, verbose=verbose)
 		board.push(move)
 		move_nbr += 1
 		if board.is_game_over(claim_draw=True):
 			break
 		board.apply_mirror()
-		move, pos_nbr, eval = mcts(model2, board, 10, 200, None, 0.95, 0.9, 0, one_hot)
+		move, pos_nbr, eval = mcts(model2, board, 10, 200, None, 0.95, 0.9, 0, one_hot, verbose=verbose)
 		board.push(move)
 		move_nbr += 1
 		board.apply_mirror
