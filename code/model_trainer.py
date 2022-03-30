@@ -38,6 +38,7 @@ import chess
 import tensorflow as tf
 import numpy as np
 import datetime
+import time
 import heapq
 from random import random, randint
 from math import log, exp
@@ -54,12 +55,12 @@ tiebreaker = count()
 def make_model(state_shape):
 	model = Sequential(
 		[
-			layers.Conv2D(filters=32, kernel_size=(3, 3), strides=1, padding="same", input_shape = state_shape, activation='relu'),
-			layers.Conv2D(filters=32, kernel_size=(3, 3), strides=1, padding="same", activation='relu'),
-			layers.Conv2D(filters=32, kernel_size=(3, 3), strides=1, padding="same", activation='relu'),
-			layers.Conv2D(filters=32, kernel_size=(3, 3), strides=1, padding="same", activation='relu'),
-			layers.Conv2D(filters=32, kernel_size=(3, 3), strides=1, padding="same", activation='relu'),
-			layers.Conv2D(filters=32, kernel_size=(3, 3), strides=1, padding="same", activation='relu'),
+			layers.Conv2D(filters=256, kernel_size=(3, 3), strides=1, padding="same", input_shape = state_shape, activation='relu'),
+			layers.Conv2D(filters=256, kernel_size=(3, 3), strides=1, padding="same", activation='relu'),
+			layers.Conv2D(filters=256, kernel_size=(3, 3), strides=1, padding="same", activation='relu'),
+			layers.Conv2D(filters=256, kernel_size=(3, 3), strides=1, padding="same", activation='relu'),
+			layers.Conv2D(filters=256, kernel_size=(3, 3), strides=1, padding="same", activation='relu'),
+			layers.Conv2D(filters=256, kernel_size=(3, 3), strides=1, padding="same", activation='relu'),
 			#layers.Conv2D(filters=32, kernel_size=(3, 3), strides=1, padding="valid", activation='relu'),
 			#layers.Conv2D(filters=32, kernel_size=(3, 3), strides=1, padding="valid", activation='relu'),
 			#layers.Conv2D(filters=32, kernel_size=(3, 3), strides=1, padding="valid", activation='relu'),
@@ -173,12 +174,12 @@ def priority_function(x):
 	else: return x+1
 
 	#Old version of the code. Gives the exact sema output but is more
-	#computationally expensive
+	#computationally expensive (about 2.5x slower)
 	if x<0: a = -log(-x+1)
 	else: a = log(x+1)
 	return exp(a)
 
-def append_moves(model, nd, pos_nbr, priority_queue, depth_penalty, random_factor, max_depth, one_hot):
+def append_moves(model, nd, pos_nbr, priority_queue, depth_penalty, random_factor, max_depth, one_hot, start_time, mean_eval):
 	if max_depth != None and nd.depth+1 > max_depth:
 		return pos_nbr, priority_queue
 	global tiebreaker
@@ -187,7 +188,8 @@ def append_moves(model, nd, pos_nbr, priority_queue, depth_penalty, random_facto
 		nd.board.push(x)
 		pos_nbr += 1
 		if pos_nbr%250 == 0:
-			print(f"pos_nbr : {pos_nbr}", end="\r")
+			print(f"pos_nbr : {pos_nbr} ({round(time.time()-start_time, 1)}s)", end="\r")
+			#print(f"{pos_nbr},{round(time.time()-start_time, 3)}")
 		listNextStates.append(board_to_np_array(nd.board.copy(), one_hot))
 		if nd.board.is_checkmate():
 			nd.children.append(node(nd.board.copy(), 2**16, nd.depth+1, nd))
@@ -200,9 +202,9 @@ def append_moves(model, nd, pos_nbr, priority_queue, depth_penalty, random_facto
 
 	for index, move in enumerate(nd.board.legal_moves):
 		#Priority in the treesearch
-		treesearch_prio = -predictions[index]
+		treesearch_prio = -predictions[index]-mean_eval
 		if nd.board.turn == chess.WHITE: treesearch_prio *= -1
-		treesearch_prio = -priority_function(treesearch_prio)*(depth_penalty**nd.depth)
+		treesearch_prio = -priority_function(treesearch_prio)*(depth_penalty**nd.depth)#*( 1 + random_factor/2 - random.random()*random_factor )
 		"""if treesearch_prio < 0:
 			treesearch_prio = exp(treesearch_prio)
 		treesearch_prio *= depth_penalty**nd.depth
@@ -212,38 +214,51 @@ def append_moves(model, nd, pos_nbr, priority_queue, depth_penalty, random_facto
 		tmp = nd.board.copy()
 		tmp.push(move)
 		new_node = node(tmp, predictions[index], nd.depth+1, nd)
-		heapq.heappush(priority_queue, (treesearch_prio, next(tiebreaker), new_node))
+		heapq.heappush(priority_queue, [treesearch_prio, next(tiebreaker), new_node])
 		nd.children.append(new_node)
 	
 	return pos_nbr, priority_queue
 
 def mcts(model, board, max_depth=None, max_pos_nbr=1000, max_search_time=None, depth_penalty=0.95, gamma=0.9, random_factor=0.2, one_hot = True, verbose = False):
-	#TODO: Monte carlos tree search
+	start = time.time()
+
 	tree_root = node(board, 0, 0, None)
-	priority_queue = []#Each element in the priority queue is of the form (priority, tiebreaker, node)
+	priority_queue = []#Each element in the priority queue is of the form [priority, tiebreaker, node]
 	#considered_pos = {}#Hashmap of the already considered pos
 	pos_nbr = 0
+	mean_eval = 0
 	
-	pos_nbr, priority_queue = append_moves(model=model, nd=tree_root, pos_nbr=pos_nbr, priority_queue=priority_queue, depth_penalty=depth_penalty, random_factor=random_factor, max_depth=max_depth, one_hot=one_hot)
+	pos_nbr, priority_queue = append_moves(model=model, nd=tree_root, pos_nbr=pos_nbr, priority_queue=priority_queue, depth_penalty=depth_penalty, random_factor=random_factor, max_depth=max_depth, one_hot=one_hot, start_time = start, mean_eval = mean_eval)
 	if verbose:
 		for x in priority_queue:
 			print(x[2].board.peek(), x[2].treesearch_prio, x[0])
+
+	#We normalize the eval of the positions to avoid considering too many if we are winning or too few if we are losing
+	if len(priority_queue): mean_eval = sum([x[2].treesearch_prio for x in priority_queue])/len(priority_queue)
+	for x in priority_queue:
+		x[2].treesearch_prio -= mean_eval
+		x[0] = -priority_function(x[2].treesearch_prio)	#This does not break the heap property as ordering is kept by the normalization
+
 	
-	while pos_nbr < max_pos_nbr and len(priority_queue) != 0:
+	while pos_nbr < max_pos_nbr and len(priority_queue) != 0 and (max_search_time!=None and time.time()-start < max_search_time):
 		b = heapq.heappop(priority_queue)
-		pos_nbr, priority_queue = append_moves(model=model, nd=b[2], pos_nbr=pos_nbr, priority_queue=priority_queue, depth_penalty=depth_penalty, random_factor=random_factor, max_depth=max_depth, one_hot=one_hot)
+		pos_nbr, priority_queue = append_moves(model=model, nd=b[2], pos_nbr=pos_nbr, priority_queue=priority_queue, depth_penalty=depth_penalty, random_factor=random_factor, max_depth=max_depth, one_hot=one_hot, start_time = start, mean_eval = mean_eval)
 	
+	if verbose: print(f"{pos_nbr} pos considered in {time.time()-start}s")
+
+	print()
 	print("Calculating value...", end="\r")
 	tree_root.calculate_value(gamma)
 	tree_root.children.sort(key=lambda x: x.value)
 
 	print("Counting children...", end = "\r")
 	tree_root.count_children()
+	print()
 
 	if verbose:
 		for x in tree_root.children:
 			print(x.board.peek(), x.value, x.children_number)
-	print(tree_root.children[-2].children)
+			
 	for x in range(len(tree_root.children)-1, -1, -1):
 		best_move = tree_root.children[x]
 		if best_move.children_number != 0 or best_move.board.is_checkmate():
@@ -301,8 +316,7 @@ def play(model, max_depth=None, max_pos_nbr=1000, max_search_time=None, depth_pe
 	
 	return board, positions_w, positions_b, boards
 
-def play_mcts(model1, model2, one_hot, verbose = False):
-	board = chess.Board()
+def play_mcts(model1, model2, one_hot, verbose = False, board = chess.Board()):
 	move_nbr = 0
 	while not board.is_game_over(claim_draw=True):
 		move, pos_nbr, eval = mcts(model1, board, 10, 200, None, 0.95, 0.9, 0, one_hot, verbose=verbose)
