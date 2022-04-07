@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+
+    <head>
+        <meta charset="UTF-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <link rel= "stylesheet" type= "text/css" href= "{{ url_for('static',filename='landing_page.css') }}">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link href="https://fonts.googleapis.com/css2?family=Sora:wght@100;200;300;400;500;600;700;800&display=swap" rel="stylesheet">
+		<script src="https://code.jquery.com/jquery-3.5.0.js"></script>
+        <title>Kero chess bot</title>
+    </head>
+
+<body>
+	<script>
+		//Make legal moves appear/disappear when you click on a piece
+		function ShowAndHide(section) {
+			var x = document.querySelectorAll(".dot");
+			for (var i = 0; i < x.length; i++) {
+				x[i].style.display = 'none';
+			}
+
+			var x = document.querySelectorAll(".dropdown-content");
+			for (var i = 0; i < x.length; i++) {
+				x[i].style.display = 'none';
+			}
+
+			var x = document.querySelectorAll(section);
+			for (var i = 0; i < x.length; i++) {
+				if (x[i].style.display == "none") {x[i].style.display = 'block';}
+				else{x[i].style.display = 'none';}
+			}
+		}
+
+		function ShowAndHideID(id){
+			var x = document.getElementById(id);
+			if (x.style.display == "none") {x.style.display = 'block';}
+			else{x.style.display = 'none';}
+		}
+
+		function ToggleDropDown(id){
+			document.getElementById(id).classList.toggle("show");
+		}
+
+		//Move a piece
+		function Move(origin, destination, promotion=""){
+			var took = true;
+			var moved_piece = document.getElementById(origin);
+			try{document.getElementById(destination).remove();}	//Removes piece if one was taken
+			catch(err){took = false;}
+
+			//Handle en passant
+			if (!took && moved_piece.alt == "pawn" && origin.split(" ")[1] != destination.split(" ")[1]){
+				document.getElementById("piece " + destination.split(" ")[1] + " " + origin.split(" ")[2]).remove();
+			}
+
+			//Handle castling
+			if (moved_piece.alt == "king" && origin.split(" ")[1] == "e" && (destination.split(" ")[1] == "c" || destination.split(" ")[1] == "g")){
+				var line = origin.split(" ")[2];
+				if (destination.split(" ")[1] == "c"){//Queenside
+					rook = document.getElementById("piece a " + line);
+					rook.setAttribute("class", "piece d " + line);
+					rook.setAttribute('onclick', "ShowAndHide('.dot_piece_d_" + line + "')");
+					rook.id = "piece d " + line;
+				}
+				else{//Kingside
+					rook = document.getElementById("piece h " + line);
+					rook.setAttribute("class", "piece f " + line);
+					rook.setAttribute('onclick', "ShowAndHide('.dot_piece_f_" + line + "')");
+					rook.id = "piece f " + line;
+				}
+			}
+
+			moved_piece.setAttribute("class", destination);//Changes current one pos
+			const split_dest = destination.split(" ");
+			moved_piece.setAttribute('onclick', "ShowAndHide('.dot_piece_" + split_dest[1] + "_" + split_dest[2] + "')");
+			moved_piece.id = destination;
+
+			var x = document.getElementById("dots");	//Remove all move selectors so that you can't make multiple moves in a row
+			while (x.lastChild) {
+        		x.removeChild(x.lastChild);
+    		}
+
+			//Handle promotion
+			switch (promotion){
+				case "q":
+					moved_piece.src = "{{ url_for('static',filename='Chess_qlt60.png') }}";
+					moved_piece.alt = "queen";
+					break;
+				case "r":
+					moved_piece.src = "{{ url_for('static',filename='Chess_rlt60.png') }}";
+					moved_piece.alt = "rook";
+					break;
+				case "b":
+					moved_piece.src = "{{ url_for('static',filename='Chess_blt60.png') }}";
+					moved_piece.alt = "bishop";
+					break;
+				case "n":
+					moved_piece.src = "{{ url_for('static',filename='Chess_nlt60.png') }}";
+					moved_piece.alt = "knight";
+					break;
+				default:
+					break;
+			}
+
+			//Submit the move to the server
+			var prev_board = document.getElementById("prev_board").innerText
+			$.post("move", {board:prev_board, ori:origin, dest:destination, prom:promotion}, function(result){
+				console.log(result)
+				if (result == "0"){
+					ShowAndHideID("draw");
+					return;
+				}
+				if (result == "1" || result == "2"){
+					ShowAndHideID("checkmate");
+					return;
+				}
+
+				const array = result.split("|");
+				document.getElementById("prev_board").innerText = array[0];	//Update the board
+
+				const mv = array[1].split("-")
+				
+				//Play the model's move
+				try{document.getElementById(mv[1]).remove();}	//Removes piece if one was taken
+				catch(err){}
+				document.getElementById(mv[0]).setAttribute("class", mv[1]);//Changes current one pos
+				const split_dest = mv[1].split(" ");
+				document.getElementById(mv[0]).setAttribute('onclick', "ShowAndHide('.dot_piece_" + split_dest[1] + "_" + split_dest[2] + "')");
+				document.getElementById(mv[0]).id = mv[1];
+
+				//Remove previous highlighters and place new ones
+				var x = document.getElementById("highlighters");	//Remove all highlighters
+				while (x.lastChild) {
+        			x.removeChild(x.lastChild);
+    			}
+				var hl1 = document.createElement("div");
+				hl1.setAttribute('class', "highlighter " + mv[0]);
+				x.appendChild(hl1);
+				var hl2 = document.createElement("div");
+				hl2.setAttribute('class', "highlighter " + mv[1]);
+				x.appendChild(hl2);
+
+				//Handles promotion, castle and en passant
+				if (mv.length = 3){
+					if (mv[2] == "e"){//En passant
+						document.getElementById("piece " + mv[1].split(" ")[1] + " " + mv[0].split(" ")[2]).remove();
+					}
+					if (mv[2] == "c"){//Castle
+						var line = mv[1].split(" ")[2];
+						if (mv[1].split(" ")[1] == "c"){//Queenside
+							rook = document.getElementById("piece a " + line);
+							rook.setAttribute("class", "piece d " + line);
+							rook.setAttribute('onclick', "ShowAndHide('.dot_piece_d_" + file + "')");
+							rook.id = "piece d " + line;
+						}
+						else{//Kingside
+							rook = document.getElementById("piece h " + line);
+							rook.setAttribute("class", "piece f " + line);
+							rook.setAttribute('onclick', "ShowAndHide('.dot_piece_f_" + line + "')");
+							rook.id = "piece f " + line;
+						}
+					}
+
+					//promotion
+					switch (mv[2]){
+						case "Q"://White queen
+							promoted = document.getElementById("piece " + mv[1].split(" ")[1] + " " + mv[1].split(" ")[2] );
+							promoted.alt = "queen";
+							promoted.src = "{{ url_for('static',filename='Chess_qlt60.png') }}";
+							break;
+
+						case "q"://Black queen
+							promoted = document.getElementById("piece " + mv[1].split(" ")[1] + " " + mv[1].split(" ")[2] );
+							promoted.alt = "queen";
+							promoted.src = "{{ url_for('static',filename='Chess_qdt60.png') }}";
+							break;
+							
+						case "R"://White rook
+							promoted = document.getElementById("piece " + mv[1].split(" ")[1] + " " + mv[1].split(" ")[2] );
+							promoted.alt = "rook";
+							promoted.src = "{{ url_for('static',filename='Chess_rlt60.png') }}";
+							break;
+
+						case "r"://Black rook
+							promoted = document.getElementById("piece " + mv[1].split(" ")[1] + " " + mv[1].split(" ")[2] );
+							promoted.alt = "rook";
+							promoted.src = "{{ url_for('static',filename='Chess_rdt60.png') }}";
+							break;
+
+						case "N"://White knight
+							promoted = document.getElementById("piece " + mv[1].split(" ")[1] + " " + mv[1].split(" ")[2] );
+							promoted.alt = "knight";
+							promoted.src = "{{ url_for('static',filename='Chess_nlt60.png') }}";
+							break;
+
+						case "n"://Black knight
+							promoted = document.getElementById("piece " + mv[1].split(" ")[1] + " " + mv[1].split(" ")[2] );
+							promoted.alt = "knight";
+							promoted.src = "{{ url_for('static',filename='Chess_ndt60.png') }}";
+							break;
+
+						case "B"://White bishop
+							promoted = document.getElementById("piece " + mv[1].split(" ")[1] + " " + mv[1].split(" ")[2] );
+							promoted.alt = "bishop";
+							promoted.src = "{{ url_for('static',filename='Chess_blt60.png') }}";
+							break;
+
+						case "b"://Black bishop
+							promoted = document.getElementById("piece " + mv[1].split(" ")[1] + " " + mv[1].split(" ")[2] );
+							promoted.alt = "bishop";
+							promoted.src = "{{ url_for('static',filename='Chess_bdt60.png') }}";
+							break;
+					}
+				}
+
+				//If game is over
+				if (array.length == 4){
+					if (array[3] == "0"){
+						ShowAndHideID("draw");
+						return;
+					}
+					if (array[3] == "1" || array[3] == "2"){
+						ShowAndHideID("checkmate");
+						return;
+					}
+				}
+
+				//Place all the new legal moves
+				const legal_moves = array[2].split("#");
+				for (var i = 0; i < legal_moves.length; i++){
+					const possible_mv = legal_moves[i].split("-")
+
+					if (possible_mv.length == 3){	//Handle promotion
+						//Creat a dropdown menue to chose which piece to promote into
+						const or = possible_mv[0].split(" ");
+						const de = possible_mv[1].split(" ");
+						var tag = document.createElement("div");
+						tag.setAttribute('class', "dropdown " + possible_mv[1]);
+						var dot = document.createElement("input");
+						dot.setAttribute("type", "image");
+						dot.setAttribute("style", "display:none;width:100%");
+						dot.src = "{{ url_for('static',filename='dot.png') }}";
+						dot.setAttribute('onclick', "ShowAndHideID(" + "'DropDown" + de[1] + "')");
+						dot.setAttribute("class", "dot dot_piece_" + or[1] + "_" + or[2]);
+						tag.appendChild(dot);
+						var dd = document.createElement('div');
+						dd.setAttribute("class", "dropdown-content");
+						dd.setAttribute("style", "display:none");
+						dd.id = "DropDown" + de[1];
+
+						//Promotion options
+						var queen = document.createElement('input');
+						queen.setAttribute("type", "image");
+						queen.src = "{{ url_for('static',filename='Chess_qlt60.png') }}";
+						queen.setAttribute("onclick", "Move('"+ possible_mv[0] + "', '" + possible_mv[1] + "', 'q')");
+						dd.appendChild(queen);
+
+						var rook = document.createElement('input');
+						rook.setAttribute("type", "image");
+						rook.src = "{{ url_for('static',filename='Chess_rlt60.png') }}";
+						rook.setAttribute("onclick", "Move('"+ possible_mv[0] + "', '" + possible_mv[1] + "', 'r')");
+						dd.appendChild(rook);
+
+						var bishop = document.createElement('input');
+						bishop.setAttribute("type", "image");
+						bishop.src = "{{ url_for('static',filename='Chess_blt60.png') }}";
+						bishop.setAttribute("onclick", "Move('"+ possible_mv[0] + "', '" + possible_mv[1] + "', 'b')");
+						dd.appendChild(bishop);
+
+						var knight = document.createElement('input');
+						knight.setAttribute("type", "image");
+						knight.src = "{{ url_for('static',filename='Chess_nlt60.png') }}";
+						knight.setAttribute("onclick", "Move('"+ possible_mv[0] + "', '" + possible_mv[1] + "', 'n')");
+						dd.appendChild(knight);
+
+						tag.appendChild(dd);
+						document.getElementById("dots").appendChild(tag);
+					}
+
+					else{
+						const or = possible_mv[0].split(" ")
+						var tag = document.createElement("input");
+						tag.type = "image";
+						tag.src = "{{ url_for('static',filename='dot.png') }}";
+						tag.setAttribute("class", "dot " + possible_mv[1] + " dot_piece_" + or[1] + "_" + or[2]);
+						tag.setAttribute("style", "display:none");
+						tag.setAttribute('onclick', "Move('" + possible_mv[0] + "', '" + possible_mv[1] + "')");
+						document.getElementById("dots").appendChild(tag);
+					}
+				}
+			})
+		}
+	</script>
+
+	<div class="chessboard">
+		<img src="{{ url_for('static',filename='chessboard.png') }}" alt="chessboard tiles" class = "tiles">
+
+		<p id="prev_board" style="display:none">rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1</p>
+
+		<div id = "highlighters"><!--Move highlighters-->
+
+		</div>
+
+		<div><!--Pieces-->
+			<input type="image" src="{{ url_for('static',filename='Chess_plt60.png') }}" alt="pawn" class = "piece a two" id = "piece a two" onclick="ShowAndHide('.dot_piece_a_two')">
+			<input type="image" src="{{ url_for('static',filename='Chess_plt60.png') }}" alt="pawn" class = "piece b two" id = "piece b two" onclick="ShowAndHide('.dot_piece_b_two')">
+			<input type="image" src="{{ url_for('static',filename='Chess_plt60.png') }}" alt="pawn" class = "piece c two" id = "piece c two" onclick="ShowAndHide('.dot_piece_c_two')">
+			<input type="image" src="{{ url_for('static',filename='Chess_plt60.png') }}" alt="pawn" class = "piece d two" id = "piece d two" onclick="ShowAndHide('.dot_piece_d_two')">
+			<input type="image" src="{{ url_for('static',filename='Chess_plt60.png') }}" alt="pawn" class = "piece e two" id = "piece e two" onclick="ShowAndHide('.dot_piece_e_two')">
+			<input type="image" src="{{ url_for('static',filename='Chess_plt60.png') }}" alt="pawn" class = "piece f two" id = "piece f two" onclick="ShowAndHide('.dot_piece_f_two')">
+			<input type="image" src="{{ url_for('static',filename='Chess_plt60.png') }}" alt="pawn" class = "piece g two" id = "piece g two" onclick="ShowAndHide('.dot_piece_g_two')">
+			<input type="image" src="{{ url_for('static',filename='Chess_plt60.png') }}" alt="pawn" class = "piece h two" id = "piece h two" onclick="ShowAndHide('.dot_piece_h_two')">
+			<input type="image" src="{{ url_for('static',filename='Chess_rlt60.png') }}" alt="rook" class = "piece a one" id = "piece a one" onclick="ShowAndHide('.dot_piece_a_one')">
+			<input type="image" src="{{ url_for('static',filename='Chess_rlt60.png') }}" alt="rook" class = "piece h one" id = "piece h one" onclick="ShowAndHide('.dot_piece_h_one')">
+			<input type="image" src="{{ url_for('static',filename='Chess_nlt60.png') }}" alt="knight" class = "piece b one" id = "piece b one" onclick="ShowAndHide('.dot_piece_b_one')">
+			<input type="image" src="{{ url_for('static',filename='Chess_nlt60.png') }}" alt="knight" class = "piece g one" id = "piece g one" onclick="ShowAndHide('.dot_piece_g_one')">
+			<input type="image" src="{{ url_for('static',filename='Chess_blt60.png') }}" alt="bishop" class = "piece c one" id = "piece c one" onclick="ShowAndHide('.dot_piece_c_one')">
+			<input type="image" src="{{ url_for('static',filename='Chess_blt60.png') }}" alt="bishop" class = "piece f one" id = "piece f one" onclick="ShowAndHide('.dot_piece_f_one')">
+			<input type="image" src="{{ url_for('static',filename='Chess_klt60.png') }}" alt="king" class = "piece e one" id = "piece e one" onclick="ShowAndHide('.dot_piece_e_one')">
+			<input type="image" src="{{ url_for('static',filename='Chess_qlt60.png') }}" alt="queen" class = "piece d one" id = "piece d one" onclick="ShowAndHide('.dot_piece_d_one')">
+
+
+			
+			<input type="image" src="{{ url_for('static',filename='Chess_pdt60.png') }}" alt="pawn" class = "piece a seven" id = "piece a seven" onclick="ShowAndHide('.dot_piece_a_seven')">
+			<input type="image" src="{{ url_for('static',filename='Chess_pdt60.png') }}" alt="pawn" class = "piece b seven" id = "piece b seven" onclick="ShowAndHide('.dot_piece_b_seven')">
+			<input type="image" src="{{ url_for('static',filename='Chess_pdt60.png') }}" alt="pawn" class = "piece c seven" id = "piece c seven" onclick="ShowAndHide('.dot_piece_c_seven')">
+			<input type="image" src="{{ url_for('static',filename='Chess_pdt60.png') }}" alt="pawn" class = "piece d seven" id = "piece d seven" onclick="ShowAndHide('.dot_piece_d_seven')">
+			<input type="image" src="{{ url_for('static',filename='Chess_pdt60.png') }}" alt="pawn" class = "piece e seven" id = "piece e seven" onclick="ShowAndHide('.dot_piece_e_seven')">
+			<input type="image" src="{{ url_for('static',filename='Chess_pdt60.png') }}" alt="pawn" class = "piece f seven" id = "piece f seven" onclick="ShowAndHide('.dot_piece_f_seven')">
+			<input type="image" src="{{ url_for('static',filename='Chess_pdt60.png') }}" alt="pawn" class = "piece g seven" id = "piece g seven" onclick="ShowAndHide('.dot_piece_g_seven')">
+			<input type="image" src="{{ url_for('static',filename='Chess_pdt60.png') }}" alt="pawn" class = "piece h seven" id = "piece h seven" onclick="ShowAndHide('.dot_piece_h_seven')">
+			<input type="image" src="{{ url_for('static',filename='Chess_rdt60.png') }}" alt="rook" class = "piece a eight" id = "piece a eight" onclick="ShowAndHide('.dot_piece_a_eight')">
+			<input type="image" src="{{ url_for('static',filename='Chess_rdt60.png') }}" alt="rook" class = "piece h eight" id = "piece h eight" onclick="ShowAndHide('.dot_piece_h_eight')">
+			<input type="image" src="{{ url_for('static',filename='Chess_ndt60.png') }}" alt="knight" class = "piece b eight" id = "piece b eight" onclick="ShowAndHide('.dot_piece_b_eight')">
+			<input type="image" src="{{ url_for('static',filename='Chess_ndt60.png') }}" alt="knight" class = "piece g eight" id = "piece g eight" onclick="ShowAndHide('.dot_piece_g_eight')">
+			<input type="image" src="{{ url_for('static',filename='Chess_bdt60.png') }}" alt="bishop" class = "piece c eight" id = "piece c eight" onclick="ShowAndHide('.dot_piece_c_eight')">
+			<input type="image" src="{{ url_for('static',filename='Chess_bdt60.png') }}" alt="bishop" class = "piece f eight" id = "piece f eight" onclick="ShowAndHide('.dot_piece_f_eight')">
+			<input type="image" src="{{ url_for('static',filename='Chess_kdt60.png') }}" alt="king" class = "piece e eight" id = "piece e eight" onclick="ShowAndHide('.dot_piece_e_eight')">
+			<input type="image" src="{{ url_for('static',filename='Chess_qdt60.png') }}" alt="queen" class = "piece d eight" id = "piece d eight" onclick="ShowAndHide('.dot_piece_d_eight')">
+
+		</div>
+
+		<div id="dots"><!--Legal moves-->
+			<input type="image" src ="{{ url_for('static',filename='dot.png') }}" class = "dot piece a three dot_piece_a_two" style="display:none" onclick="Move('piece a two', 'piece a three')">
+			<input type="image" src ="{{ url_for('static',filename='dot.png') }}" class = "dot piece a four dot_piece_a_two" style="display:none" onclick="Move('piece a two', 'piece a four')">
+			<input type="image" src ="{{ url_for('static',filename='dot.png') }}" class = "dot piece b three dot_piece_b_two" style="display:none" onclick="Move('piece b two', 'piece b three')">
+			<input type="image" src ="{{ url_for('static',filename='dot.png') }}" class = "dot piece b four dot_piece_b_two" style="display:none" onclick="Move('piece b two', 'piece b four')">
+			<input type="image" src ="{{ url_for('static',filename='dot.png') }}" class = "dot piece c three dot_piece_c_two" style="display:none" onclick="Move('piece c two', 'piece c three')">
+			<input type="image" src ="{{ url_for('static',filename='dot.png') }}" class = "dot piece c four dot_piece_c_two" style="display:none" onclick="Move('piece c two', 'piece c four')">
+			<input type="image" src ="{{ url_for('static',filename='dot.png') }}" class = "dot piece d three dot_piece_d_two" style="display:none" onclick="Move('piece d two', 'piece d three')">
+			<input type="image" src ="{{ url_for('static',filename='dot.png') }}" class = "dot piece d four dot_piece_d_two" style="display:none" onclick="Move('piece d two', 'piece d four')">
+			<input type="image" src ="{{ url_for('static',filename='dot.png') }}" class = "dot piece e three dot_piece_e_two" style="display:none" onclick="Move('piece e two', 'piece e three')">
+			<input type="image" src ="{{ url_for('static',filename='dot.png') }}" class = "dot piece e four dot_piece_e_two" style="display:none" onclick="Move('piece e two', 'piece e four')">
+			<input type="image" src ="{{ url_for('static',filename='dot.png') }}" class = "dot piece f three dot_piece_f_two" style="display:none" onclick="Move('piece f two', 'piece f three')">
+			<input type="image" src ="{{ url_for('static',filename='dot.png') }}" class = "dot piece f four dot_piece_f_two" style="display:none" onclick="Move('piece f two', 'piece f four')">
+			<input type="image" src ="{{ url_for('static',filename='dot.png') }}" class = "dot piece g three dot_piece_g_two" style="display:none" onclick="Move('piece g two', 'piece g three')">
+			<input type="image" src ="{{ url_for('static',filename='dot.png') }}" class = "dot piece g four dot_piece_g_two" style="display:none" onclick="Move('piece g two', 'piece g four')">
+			<input type="image" src ="{{ url_for('static',filename='dot.png') }}" class = "dot piece h three dot_piece_h_two" style="display:none" onclick="Move('piece h two', 'piece h three')">
+			<input type="image" src ="{{ url_for('static',filename='dot.png') }}" class = "dot piece h four dot_piece_h_two" style="display:none" onclick="Move('piece h two', 'piece h four')">
+			<input type="image" src ="{{ url_for('static',filename='dot.png') }}" class = "dot piece a three dot_piece_b_one" style="display:none" onclick="Move('piece b one', 'piece a three')">
+			<input type="image" src ="{{ url_for('static',filename='dot.png') }}" class = "dot piece c three dot_piece_b_one" style="display:none" onclick="Move('piece b one', 'piece c three')">
+			<input type="image" src ="{{ url_for('static',filename='dot.png') }}" class = "dot piece f three dot_piece_g_one" style="display:none" onclick="Move('piece g one', 'piece f three')">
+			<input type="image" src ="{{ url_for('static',filename='dot.png') }}" class = "dot piece h three dot_piece_g_one" style="display:none" onclick="Move('piece g one', 'piece h three')">
+		</div>
+		<div id = "endscreens">
+			<!--Stalemate-->
+			<div id = "draw" style="display:none">
+				<input type="image" src = "{{ url_for('static',filename='cross.png') }}" class ="cross" onclick="ShowAndHideID('draw')">
+				<p>Draw</p>
+			</div>
+			<div id = "checkmate" style="display:none">
+				<input type="image" src = "{{ url_for('static',filename='cross.png') }}" class ="cross" onclick="ShowAndHideID('checkmate')">
+				<p>Checkmate</p>
+			</div>
+		</div>
+	</div>
+
+</body>
+
+</html>

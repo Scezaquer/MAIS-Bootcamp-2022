@@ -3,3 +3,4 @@ code/agents/*
 agents/*
 code/training_data/*
 code/play chess dot com.py
+code/webapp/env/*

@@ -1,0 +1,123 @@
+body {
+	background-image: url("../static/chess_background.jpg");
+	background-color: #cccccc;
+	background-size: cover;
+	background-repeat: no-repeat;
+	}
+
+.chessboard{
+	position: relative;
+	margin-left: auto;
+	margin-right: auto;
+	width: 45%;
+}
+
+.tiles{
+	display: block;
+	width:100%;
+}
+
+.piece{
+	position: absolute;
+	width: 12.5%;
+}
+
+.cross{
+	position: absolute;
+	width: 5%;
+	right: 5%;
+	top: 5%;
+}
+
+#draw, #checkmate{
+	position: absolute;
+	width: 40%;
+	height: 20%;
+	background-color: rgba(187, 89, 35, 0.921);
+	border-radius: 10%;
+	top: 40%;
+	left: 30%;
+	text-align: center;
+	font-weight: bold;
+	font-family: Arial, Helvetica, sans-serif;
+	font-size: 2.5vw;
+}
+
+.dropdown-content {
+	position: absolute;
+}
+
+.dropdown{
+	width: 12.5%;
+	height: 12.5%;
+}
+
+.highlighter{
+	width: 12.5%;
+	height: 12.5%;
+	background-color: rgba(255, 255, 0, 0.473);
+}
+
+.a{
+	left: 0%;
+}
+
+.b{
+	left:12.5%;
+}
+
+.c{
+	left:25%;
+}
+
+.d{
+	left:37.5%;
+}
+
+.e{
+	left:50%;
+}
+
+.f{
+	left:62.5%;
+}
+
+.g{
+	left:75%;
+}
+
+.h{
+	left:87.5%
+}
+
+.one{
+	top: 87.5%;
+}
+
+.two{
+	top: 75%;
+}
+
+.three{
+	top:62.5%;
+}
+
+.four{
+	top:50%;
+}
+
+.five{
+	top:37.5%;
+}
+
+.six{
+	top:25%;
+}
+
+.seven{
+	top:12.5%;
+}
+
+.eight{
+	top:0%;
+}

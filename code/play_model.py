@@ -30,7 +30,7 @@ def get_human_move(board):
 			print("Incorrect move. Must be legal and UCI format")
 	return move
 
-model_side = chess.WHITE
+model_side = chess.BLACK
 model = load_model("2022-03-18_16-22-38-205912_1200.h5")
 board = chess.Board()
 max_depth=10
